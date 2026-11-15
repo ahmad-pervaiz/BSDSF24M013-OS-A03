@@ -60,3 +60,50 @@ char** tokenize(char* cmdline) {
     arglist[argnum] = NULL;
     return arglist;
 }
+
+int handle_builtin(char** arglist) {
+    if (arglist == NULL || arglist[0] == NULL) {
+        return 0;
+    }
+
+    // 1. exit: Terminates the shell gracefully
+    if (strcmp(arglist[0], "exit") == 0) {
+        int status = 0;
+        if (arglist[1] != NULL) {
+            status = atoi(arglist[1]);
+        }
+        exit(status);
+    }
+
+    // 2. cd <directory>: Changes the current working directory
+    if (strcmp(arglist[0], "cd") == 0) {
+        char* dir = arglist[1];
+        if (dir == NULL) {
+            dir = getenv("HOME");
+        }
+        if (dir == NULL) {
+            fprintf(stderr, "cd: expected argument\n");
+        } else if (chdir(dir) != 0) {
+            perror("cd");
+        }
+        return 1;
+    }
+
+    // 3. help: Displays a brief help message listing built-in commands
+    if (strcmp(arglist[0], "help") == 0) {
+        printf("FCIT Custom Shell - Built-in Commands:\n");
+        printf("  cd <directory>  : Change the current working directory\n");
+        printf("  exit            : Terminate the shell\n");
+        printf("  help            : Display this help message\n");
+        printf("  jobs            : List active background jobs\n");
+        return 1;
+    }
+
+    // 4. jobs: Placeholder for Feature 6
+    if (strcmp(arglist[0], "jobs") == 0) {
+        printf("Job control not yet implemented.\n");
+        return 1;
+    }
+
+    return 0; // Not a built-in command
+}
