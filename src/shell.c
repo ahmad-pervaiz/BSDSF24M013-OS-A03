@@ -72,6 +72,7 @@ int handle_builtin(char** arglist) {
         if (arglist[1] != NULL) {
             status = atoi(arglist[1]);
         }
+        clear_history();
         exit(status);
     }
 
@@ -95,15 +96,67 @@ int handle_builtin(char** arglist) {
         printf("  cd <directory>  : Change the current working directory\n");
         printf("  exit            : Terminate the shell\n");
         printf("  help            : Display this help message\n");
+        printf("  history         : Display command history\n");
         printf("  jobs            : List active background jobs\n");
         return 1;
     }
 
-    // 4. jobs: Placeholder for Feature 6
+    // 4. history: Displays command history
+    if (strcmp(arglist[0], "history") == 0) {
+        print_history();
+        return 1;
+    }
+
+    // 5. jobs: Placeholder for Feature 6
     if (strcmp(arglist[0], "jobs") == 0) {
         printf("Job control not yet implemented.\n");
         return 1;
     }
 
     return 0; // Not a built-in command
+}
+
+// History storage and functions
+static char* history[HISTORY_SIZE];
+static int history_count = 0;
+
+void add_history(const char* cmd) {
+    if (cmd == NULL || cmd[0] == '\0') {
+        return;
+    }
+
+    if (history_count < HISTORY_SIZE) {
+        history[history_count++] = strdup(cmd);
+    } else {
+        // Full: overwrite oldest command by shifting left
+        free(history[0]);
+        for (int i = 1; i < HISTORY_SIZE; i++) {
+            history[i - 1] = history[i];
+        }
+        history[HISTORY_SIZE - 1] = strdup(cmd);
+    }
+}
+
+char* get_history(int n) {
+    if (n < 1 || n > history_count) {
+        return NULL;
+    }
+    return history[n - 1];
+}
+
+int print_history(void) {
+    for (int i = 0; i < history_count; i++) {
+        printf("%d  %s\n", i + 1, history[i]);
+    }
+    return 1;
+}
+
+void clear_history(void) {
+    for (int i = 0; i < history_count; i++) {
+        if (history[i] != NULL) {
+            free(history[i]);
+            history[i] = NULL;
+        }
+    }
+    history_count = 0;
 }
