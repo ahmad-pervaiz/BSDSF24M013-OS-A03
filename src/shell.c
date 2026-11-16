@@ -318,3 +318,112 @@ int print_history(void) {
     }
     return 1;
 }
+
+int handle_if_statement(char* first_line) {
+    char* p = first_line;
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncmp(p, "if", 2) != 0 || (p[2] != ' ' && p[2] != '\t' && p[2] != '\0')) {
+        return 0; // Not an if statement
+    }
+
+    char condition[MAX_LEN] = "";
+    char* then_cmds[MAXARGS];
+    int num_then = 0;
+    char* else_cmds[MAXARGS];
+    int num_else = 0;
+
+    char* cond_start = p + 2;
+    while (*cond_start == ' ' || *cond_start == '\t') cond_start++;
+
+    strncpy(condition, cond_start, MAX_LEN - 1);
+    condition[MAX_LEN - 1] = '\0';
+    int cl = strlen(condition);
+    while (cl > 0 && (condition[cl - 1] == ' ' || condition[cl - 1] == '\t' || condition[cl - 1] == ';')) {
+        condition[--cl] = '\0';
+    }
+
+    enum { STATE_NONE, STATE_THEN, STATE_ELSE } state = STATE_NONE;
+    int fi_found = 0;
+
+    while (!fi_found) {
+        char* line = readline("> ");
+        if (line == NULL) {
+            fprintf(stderr, "syntax error: unexpected end of file while looking for matching 'fi'\n");
+            break;
+        }
+
+        char* trimmed = line;
+        while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+
+        if (*trimmed == '\0') {
+            free(line);
+            continue;
+        }
+
+        if (strcmp(trimmed, "then") == 0) {
+            state = STATE_THEN;
+            free(line);
+        } else if (strcmp(trimmed, "else") == 0) {
+            state = STATE_ELSE;
+            free(line);
+        } else if (strcmp(trimmed, "fi") == 0) {
+            fi_found = 1;
+            free(line);
+            break;
+        } else {
+            if (state == STATE_THEN && num_then < MAXARGS) {
+                then_cmds[num_then++] = line;
+            } else if (state == STATE_ELSE && num_else < MAXARGS) {
+                else_cmds[num_else++] = line;
+            } else {
+                free(line);
+            }
+        }
+    }
+
+    // Execute condition command
+    int cond_exit = 1;
+    if (strlen(condition) > 0) {
+        char* prep = preprocess_operators(condition);
+        cond_exit = execute_pipeline(prep, 0);
+        free(prep);
+    }
+
+    // Based on exit code, execute the appropriate block
+    if (cond_exit == 0) {
+        for (int i = 0; i < num_then; i++) {
+            char* prep = preprocess_operators(then_cmds[i]);
+            char* chained[MAXARGS];
+            int n_ch = split_by_semicolon(prep, chained, MAXARGS);
+            for (int c = 0; c < n_ch; c++) {
+                char* s = chained[c];
+                while (*s == ' ' || *s == '\t') s++;
+                if (*s != '\0') {
+                    int bg = check_background(s);
+                    execute_pipeline(s, bg);
+                }
+            }
+            free(prep);
+        }
+    } else {
+        for (int i = 0; i < num_else; i++) {
+            char* prep = preprocess_operators(else_cmds[i]);
+            char* chained[MAXARGS];
+            int n_ch = split_by_semicolon(prep, chained, MAXARGS);
+            for (int c = 0; c < n_ch; c++) {
+                char* s = chained[c];
+                while (*s == ' ' || *s == '\t') s++;
+                if (*s != '\0') {
+                    int bg = check_background(s);
+                    execute_pipeline(s, bg);
+                }
+            }
+            free(prep);
+        }
+    }
+
+    for (int i = 0; i < num_then; i++) free(then_cmds[i]);
+    for (int i = 0; i < num_else; i++) free(else_cmds[i]);
+
+    return 1;
+}

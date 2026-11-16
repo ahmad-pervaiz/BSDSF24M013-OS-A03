@@ -66,10 +66,21 @@ int main() {
             // Replace cmdline with the retrieved command
             free(cmdline);
             cmdline = strdup(target);
+            trimmed = cmdline;
+            while (*trimmed == ' ' || *trimmed == '\t') {
+                trimmed++;
+            }
         }
 
         // Add the non-empty command to Readline history
         add_history(cmdline);
+
+        // Check for if-then-else-fi control structure
+        if (strncmp(trimmed, "if", 2) == 0 && (trimmed[2] == ' ' || trimmed[2] == '\t' || trimmed[2] == '\0')) {
+            handle_if_statement(trimmed);
+            free(cmdline);
+            continue;
+        }
 
         // Preprocess line to ensure proper spacing around special operators
         char* preprocessed = preprocess_operators(cmdline);

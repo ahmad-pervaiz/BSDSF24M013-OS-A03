@@ -7,14 +7,19 @@ int execute(char* arglist[]) {
     switch (cpid) {
         case -1:
             perror("fork failed");
-            exit(1);
+            return 1;
         case 0: // Child process
             execvp(arglist[0], arglist);
             perror("Command not found");
-            exit(1);
+            exit(127);
         default: // Parent process
             waitpid(cpid, &status, 0);
-            return 0;
+            if (WIFEXITED(status)) {
+                return WEXITSTATUS(status);
+            } else if (WIFSIGNALED(status)) {
+                return 128 + WTERMSIG(status);
+            }
+            return 1;
     }
 }
 
@@ -100,6 +105,8 @@ int execute_pipeline(char* cmdline, int is_background) {
             return 0;
         }
 
+        int exit_code = 0;
+
         // Check if there is redirection
         int has_redir = 0;
         for (int i = 0; arglist[i] != NULL; i++) {
@@ -111,37 +118,47 @@ int execute_pipeline(char* cmdline, int is_background) {
 
         if (!has_redir) {
             if (!is_background && (strcmp(arglist[0], "cd") == 0 || strcmp(arglist[0], "exit") == 0)) {
-                handle_builtin(arglist);
+                exit_code = handle_builtin(arglist) ? 0 : 1;
             } else if (!is_background && handle_builtin(arglist) == 1) {
-                // Built-in handled in parent
+                exit_code = 0;
             } else {
                 pid_t cpid = fork();
                 if (cpid < 0) {
                     perror("fork failed");
+                    exit_code = 1;
                 } else if (cpid == 0) {
                     if (handle_builtin(arglist) == 1) {
                         exit(0);
                     }
                     execvp(arglist[0], arglist);
                     perror("Command not found");
-                    exit(1);
+                    exit(127);
                 } else {
                     if (is_background) {
                         add_job(cpid, cmdline);
                         printf("[%d] %d\n", get_job_id(cpid), cpid);
+                        exit_code = 0;
                     } else {
                         int status;
                         waitpid(cpid, &status, 0);
+                        if (WIFEXITED(status)) {
+                            exit_code = WEXITSTATUS(status);
+                        } else if (WIFSIGNALED(status)) {
+                            exit_code = 128 + WTERMSIG(status);
+                        } else {
+                            exit_code = 1;
+                        }
                     }
                 }
             }
         } else {
             if (!is_background && (strcmp(arglist[0], "cd") == 0 || strcmp(arglist[0], "exit") == 0)) {
-                handle_builtin(arglist);
+                exit_code = handle_builtin(arglist) ? 0 : 1;
             } else {
                 pid_t pid = fork();
                 if (pid < 0) {
                     perror("fork failed");
+                    exit_code = 1;
                 } else if (pid == 0) {
                     char* exec_args[MAXARGS + 1];
                     if (setup_redirection(arglist, exec_args) < 0) {
@@ -153,23 +170,31 @@ int execute_pipeline(char* cmdline, int is_background) {
                     if (handle_builtin(exec_args) == 0) {
                         execvp(exec_args[0], exec_args);
                         perror("Command not found");
-                        exit(1);
+                        exit(127);
                     }
                     exit(0);
                 } else {
                     if (is_background) {
                         add_job(pid, cmdline);
                         printf("[%d] %d\n", get_job_id(pid), pid);
+                        exit_code = 0;
                     } else {
                         int status;
                         waitpid(pid, &status, 0);
+                        if (WIFEXITED(status)) {
+                            exit_code = WEXITSTATUS(status);
+                        } else if (WIFSIGNALED(status)) {
+                            exit_code = 128 + WTERMSIG(status);
+                        } else {
+                            exit_code = 1;
+                        }
                     }
                 }
             }
         }
 
         free_arglist(arglist);
-        return 0;
+        return exit_code;
     }
 
     // num_cmds > 1: Pipeline
@@ -189,21 +214,18 @@ int execute_pipeline(char* cmdline, int is_background) {
             return -1;
         }
         if (pids[i] == 0) {
-            // Child i connects to previous pipe's read end
             if (i > 0) {
                 if (dup2(pipefds[i - 1][0], STDIN_FILENO) < 0) {
                     perror("dup2");
                     exit(1);
                 }
             }
-            // Child i connects to current pipe's write end
             if (i < num_cmds - 1) {
                 if (dup2(pipefds[i][1], STDOUT_FILENO) < 0) {
                     perror("dup2");
                     exit(1);
                 }
             }
-            // Close all pipe fds in child
             for (int k = 0; k < num_cmds - 1; k++) {
                 close(pipefds[k][0]);
                 close(pipefds[k][1]);
@@ -223,13 +245,12 @@ int execute_pipeline(char* cmdline, int is_background) {
             if (handle_builtin(exec_args) == 0) {
                 execvp(exec_args[0], exec_args);
                 perror("Command not found");
-                exit(1);
+                exit(127);
             }
             exit(0);
         }
     }
 
-    // In parent: close all pipe fds
     for (int k = 0; k < num_cmds - 1; k++) {
         close(pipefds[k][0]);
         close(pipefds[k][1]);
@@ -238,12 +259,21 @@ int execute_pipeline(char* cmdline, int is_background) {
     if (is_background) {
         add_job(pids[num_cmds - 1], cmdline);
         printf("[%d] %d\n", get_job_id(pids[num_cmds - 1]), pids[num_cmds - 1]);
+        return 0;
     } else {
-        // Wait for all children in pipeline
+        int last_status = 0;
         for (int i = 0; i < num_cmds; i++) {
-            waitpid(pids[i], NULL, 0);
+            int status;
+            waitpid(pids[i], &status, 0);
+            if (i == num_cmds - 1) {
+                last_status = status;
+            }
         }
+        if (WIFEXITED(last_status)) {
+            return WEXITSTATUS(last_status);
+        } else if (WIFSIGNALED(last_status)) {
+            return 128 + WTERMSIG(last_status);
+        }
+        return 1;
     }
-
-    return 0;
 }

@@ -29,6 +29,7 @@ int execute(char** arglist);
 int execute_pipeline(char* cmdline, int is_background);
 int setup_redirection(char** arglist, char** exec_args);
 int handle_builtin(char** arglist);
+int handle_if_statement(char* first_line);
 
 // Job control prototypes
 void add_job(pid_t pid, const char* cmd);
