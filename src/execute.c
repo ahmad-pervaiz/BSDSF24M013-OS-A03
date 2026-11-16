@@ -105,6 +105,16 @@ int execute_pipeline(char* cmdline, int is_background) {
             return 0;
         }
 
+        // Check if this is a shell variable assignment: VARNAME=value
+        if (is_assignment(arglist[0]) && arglist[1] == NULL) {
+            handle_assignment_statement(commands[0]);
+            free_arglist(arglist);
+            return 0;
+        }
+
+        // Expand variables ($VARNAME) in arguments
+        expand_arglist(arglist);
+
         int exit_code = 0;
 
         // Check if there is redirection
@@ -235,6 +245,10 @@ int execute_pipeline(char* cmdline, int is_background) {
             if (sub_args == NULL || sub_args[0] == NULL) {
                 exit(0);
             }
+
+            // Expand variables ($VARNAME) in arguments
+            expand_arglist(sub_args);
+
             char* exec_args[MAXARGS + 1];
             if (setup_redirection(sub_args, exec_args) < 0) {
                 exit(1);

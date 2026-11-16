@@ -94,21 +94,22 @@ char** tokenize(char* cmdline) {
         
         if (*cp == '\0') break; // Line was only whitespace
 
-        if (*cp == '\"' || *cp == '\'') {
-            char quote = *cp++;
-            start = cp;
-            len = 0;
-            while (*cp != '\0' && *cp != quote) {
-                len++;
-                cp++;
+        start = cp;
+        len = 0;
+        int in_quote = 0;
+        char quote_char = 0;
+
+        while (*cp != '\0') {
+            if (!in_quote && (*cp == '\"' || *cp == '\'')) {
+                in_quote = 1;
+                quote_char = *cp;
+            } else if (in_quote && *cp == quote_char) {
+                in_quote = 0;
+            } else if (!in_quote && (*cp == ' ' || *cp == '\t')) {
+                break;
             }
-            if (*cp == quote) cp++;
-        } else {
-            start = cp;
-            len = 1;
-            while (*++cp != '\0' && !(*cp == ' ' || *cp == '\t')) {
-                len++;
-            }
+            len++;
+            cp++;
         }
 
         if (len >= ARGLEN) len = ARGLEN - 1;
@@ -198,6 +199,166 @@ int get_job_id(pid_t pid) {
     return 1;
 }
 
+// Shell Variable Storage & Functions
+typedef struct ShellVar {
+    char* name;
+    char* value;
+    struct ShellVar* next;
+} ShellVar;
+
+static ShellVar* var_head = NULL;
+
+int set_variable(const char* name, const char* value) {
+    if (name == NULL || value == NULL) return -1;
+
+    ShellVar* curr = var_head;
+    while (curr != NULL) {
+        if (strcmp(curr->name, name) == 0) {
+            free(curr->value);
+            curr->value = strdup(value);
+            return 0;
+        }
+        curr = curr->next;
+    }
+
+    ShellVar* node = (ShellVar*)malloc(sizeof(ShellVar));
+    node->name = strdup(name);
+    node->value = strdup(value);
+    node->next = var_head;
+    var_head = node;
+    return 0;
+}
+
+const char* get_variable(const char* name) {
+    if (name == NULL) return "";
+    ShellVar* curr = var_head;
+    while (curr != NULL) {
+        if (strcmp(curr->name, name) == 0) {
+            return curr->value;
+        }
+        curr = curr->next;
+    }
+    char* env = getenv(name);
+    return env ? env : "";
+}
+
+int print_variables(void) {
+    ShellVar* curr = var_head;
+    while (curr != NULL) {
+        printf("%s=%s\n", curr->name, curr->value);
+        curr = curr->next;
+    }
+    return 1;
+}
+
+void free_variables(void) {
+    ShellVar* curr = var_head;
+    while (curr != NULL) {
+        ShellVar* next = curr->next;
+        free(curr->name);
+        free(curr->value);
+        free(curr);
+        curr = next;
+    }
+    var_head = NULL;
+}
+
+int is_assignment(const char* s) {
+    if (s == NULL || !((s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z') || s[0] == '_')) {
+        return 0;
+    }
+    const char* eq = strchr(s, '=');
+    if (eq == NULL) return 0;
+    for (const char* p = s; p < eq; p++) {
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+char* expand_variables(const char* str) {
+    if (str == NULL) return NULL;
+    char buffer[MAX_LEN * 2];
+    int buf_idx = 0;
+
+    for (int i = 0; str[i] != '\0' && buf_idx < sizeof(buffer) - 1; ) {
+        if (str[i] == '$') {
+            i++; // skip '$'
+            char var_name[64];
+            int v_idx = 0;
+            while (str[i] != '\0' && (
+                   (str[i] >= 'a' && str[i] <= 'z') ||
+                   (str[i] >= 'A' && str[i] <= 'Z') ||
+                   (str[i] >= '0' && str[i] <= '9') ||
+                   str[i] == '_') && v_idx < 63) {
+                var_name[v_idx++] = str[i++];
+            }
+            var_name[v_idx] = '\0';
+            const char* val = get_variable(var_name);
+            for (int k = 0; val[k] != '\0' && buf_idx < sizeof(buffer) - 1; k++) {
+                buffer[buf_idx++] = val[k];
+            }
+        } else {
+            buffer[buf_idx++] = str[i++];
+        }
+    }
+    buffer[buf_idx] = '\0';
+    return strdup(buffer);
+}
+
+void strip_quotes(char* str) {
+    if (str == NULL) return;
+    int len = strlen(str);
+    if (len >= 2 && ((str[0] == '\"' && str[len - 1] == '\"') || (str[0] == '\'' && str[len - 1] == '\''))) {
+        memmove(str, str + 1, len - 2);
+        str[len - 2] = '\0';
+    }
+}
+
+void expand_arglist(char** arglist) {
+    if (arglist == NULL) return;
+    for (int i = 0; arglist[i] != NULL; i++) {
+        if (strchr(arglist[i], '$') != NULL) {
+            char* expanded = expand_variables(arglist[i]);
+            free(arglist[i]);
+            arglist[i] = expanded;
+        }
+        strip_quotes(arglist[i]);
+    }
+}
+
+int handle_assignment_statement(const char* stmt) {
+    char name[128];
+    const char* eq = strchr(stmt, '=');
+    if (eq == NULL) return 0;
+
+    int nlen = eq - stmt;
+    if (nlen >= sizeof(name)) nlen = sizeof(name) - 1;
+    strncpy(name, stmt, nlen);
+    name[nlen] = '\0';
+
+    const char* val_start = eq + 1;
+    char clean_val[MAX_LEN];
+    int vlen = strlen(val_start);
+
+    // Strip quotes if any
+    if (vlen >= 2 && ((val_start[0] == '\"' && val_start[vlen - 1] == '\"') ||
+                      (val_start[0] == '\'' && val_start[vlen - 1] == '\''))) {
+        strncpy(clean_val, val_start + 1, vlen - 2);
+        clean_val[vlen - 2] = '\0';
+    } else {
+        strncpy(clean_val, val_start, sizeof(clean_val) - 1);
+        clean_val[sizeof(clean_val) - 1] = '\0';
+    }
+
+    // Expand any variables in the value
+    char* expanded_val = expand_variables(clean_val);
+    set_variable(name, expanded_val);
+    free(expanded_val);
+    return 1;
+}
+
 int handle_builtin(char** arglist) {
     if (arglist == NULL || arglist[0] == NULL) {
         return 0;
@@ -210,6 +371,7 @@ int handle_builtin(char** arglist) {
             status = atoi(arglist[1]);
         }
         clear_history();
+        free_variables();
         exit(status);
     }
 
@@ -235,6 +397,7 @@ int handle_builtin(char** arglist) {
         printf("  help            : Display this help message\n");
         printf("  history         : Display command history\n");
         printf("  jobs            : List active background jobs\n");
+        printf("  set             : Display all shell variables\n");
         return 1;
     }
 
@@ -250,12 +413,18 @@ int handle_builtin(char** arglist) {
         return 1;
     }
 
+    // 6. set: Displays all shell variables
+    if (strcmp(arglist[0], "set") == 0) {
+        print_variables();
+        return 1;
+    }
+
     return 0; // Not a built-in command
 }
 
 // Built-in command generator for Readline tab completion
 static const char* builtins[] = {
-    "cd", "exit", "help", "history", "jobs", NULL
+    "cd", "exit", "help", "history", "jobs", "set", NULL
 };
 
 char* builtin_generator(const char* text, int state) {

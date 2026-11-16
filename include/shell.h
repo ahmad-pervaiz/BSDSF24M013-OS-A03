@@ -38,6 +38,16 @@ void check_jobs(void);
 int print_jobs(void);
 int get_job_id(pid_t pid);
 
+// Variable management prototypes
+int set_variable(const char* name, const char* value);
+const char* get_variable(const char* name);
+int print_variables(void);
+void free_variables(void);
+int is_assignment(const char* s);
+char* expand_variables(const char* str);
+void expand_arglist(char** arglist);
+int handle_assignment_statement(const char* stmt);
+
 // Readline and history helper prototypes
 void init_readline(void);
 char** shell_completion(const char* text, int start, int end);
