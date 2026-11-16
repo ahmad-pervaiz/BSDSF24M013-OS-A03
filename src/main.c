@@ -2,7 +2,6 @@
 
 int main() {
     char* cmdline;
-    char** arglist;
 
     init_readline();
 
@@ -58,20 +57,14 @@ int main() {
             cmdline = strdup(target);
         }
 
-        // Add the command to history
+        // Add the non-empty command to Readline history
         add_history(cmdline);
 
-        if ((arglist = tokenize(cmdline)) != NULL) {
-            if (handle_builtin(arglist) == 0) {
-                execute(arglist);
-            }
+        // Preprocess line to ensure proper spacing around special operators
+        char* preprocessed = preprocess_operators(cmdline);
+        execute_pipeline(preprocessed);
+        free(preprocessed);
 
-            // Free the memory allocated by tokenize()
-            for (int i = 0; arglist[i] != NULL; i++) {
-                free(arglist[i]);
-            }
-            free(arglist);
-        }
         free(cmdline);
     }
 

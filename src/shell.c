@@ -1,5 +1,40 @@
 #include "shell.h"
 
+char* preprocess_operators(const char* line) {
+    if (line == NULL) return NULL;
+    int len = strlen(line);
+    char* result = (char*)malloc(len * 3 + 1);
+    int j = 0;
+    int in_single = 0, in_double = 0;
+
+    for (int i = 0; line[i] != '\0'; i++) {
+        char c = line[i];
+        if (c == '\'' && !in_double) {
+            in_single = !in_single;
+            result[j++] = c;
+        } else if (c == '\"' && !in_single) {
+            in_double = !in_double;
+            result[j++] = c;
+        } else if (!in_single && !in_double && (c == '<' || c == '>' || c == '|' || c == ';' || c == '&')) {
+            result[j++] = ' ';
+            result[j++] = c;
+            result[j++] = ' ';
+        } else {
+            result[j++] = c;
+        }
+    }
+    result[j] = '\0';
+    return result;
+}
+
+void free_arglist(char** arglist) {
+    if (arglist == NULL) return;
+    for (int i = 0; arglist[i] != NULL; i++) {
+        free(arglist[i]);
+    }
+    free(arglist);
+}
+
 char** tokenize(char* cmdline) {
     // Edge case: empty command line
     if (cmdline == NULL || cmdline[0] == '\0' || cmdline[0] == '\n') {
@@ -22,18 +57,31 @@ char** tokenize(char* cmdline) {
         
         if (*cp == '\0') break; // Line was only whitespace
 
-        start = cp;
-        len = 1;
-        while (*++cp != '\0' && !(*cp == ' ' || *cp == '\t')) {
-            len++;
+        if (*cp == '\"' || *cp == '\'') {
+            char quote = *cp++;
+            start = cp;
+            len = 0;
+            while (*cp != '\0' && *cp != quote) {
+                len++;
+                cp++;
+            }
+            if (*cp == quote) cp++;
+        } else {
+            start = cp;
+            len = 1;
+            while (*++cp != '\0' && !(*cp == ' ' || *cp == '\t')) {
+                len++;
+            }
         }
+
+        if (len >= ARGLEN) len = ARGLEN - 1;
         strncpy(arglist[argnum], start, len);
         arglist[argnum][len] = '\0';
         argnum++;
     }
 
     if (argnum == 0) { // No arguments were parsed
-        for(int i = 0; i < MAXARGS + 1; i++) free(arglist[i]);
+        for (int i = 0; i < MAXARGS + 1; i++) free(arglist[i]);
         free(arglist);
         return NULL;
     }
