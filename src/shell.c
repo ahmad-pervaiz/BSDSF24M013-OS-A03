@@ -1,24 +1,5 @@
 #include "shell.h"
 
-char* read_cmd(char* prompt, FILE* fp) {
-    printf("%s", prompt);
-    char* cmdline = (char*) malloc(sizeof(char) * MAX_LEN);
-    int c, pos = 0;
-
-    while ((c = getc(fp)) != EOF) {
-        if (c == '\n') break;
-        cmdline[pos++] = c;
-    }
-
-    if (c == EOF && pos == 0) {
-        free(cmdline);
-        return NULL; // Handle Ctrl+D
-    }
-    
-    cmdline[pos] = '\0';
-    return cmdline;
-}
-
 char** tokenize(char* cmdline) {
     // Edge case: empty command line
     if (cmdline == NULL || cmdline[0] == '\0' || cmdline[0] == '\n') {
@@ -116,47 +97,68 @@ int handle_builtin(char** arglist) {
     return 0; // Not a built-in command
 }
 
-// History storage and functions
-static char* history[HISTORY_SIZE];
-static int history_count = 0;
+// Built-in command generator for Readline tab completion
+static const char* builtins[] = {
+    "cd", "exit", "help", "history", "jobs", NULL
+};
 
-void add_history(const char* cmd) {
-    if (cmd == NULL || cmd[0] == '\0') {
-        return;
+char* builtin_generator(const char* text, int state) {
+    static int list_index, len;
+    char* name;
+
+    if (!state) {
+        list_index = 0;
+        len = strlen(text);
     }
 
-    if (history_count < HISTORY_SIZE) {
-        history[history_count++] = strdup(cmd);
-    } else {
-        // Full: overwrite oldest command by shifting left
-        free(history[0]);
-        for (int i = 1; i < HISTORY_SIZE; i++) {
-            history[i - 1] = history[i];
+    while ((name = (char*)builtins[list_index++])) {
+        if (strncmp(name, text, len) == 0) {
+            return strdup(name);
         }
-        history[HISTORY_SIZE - 1] = strdup(cmd);
     }
+
+    return NULL;
+}
+
+char** shell_completion(const char* text, int start, int end) {
+    char** matches = NULL;
+
+    // Only complete built-in commands at the start of the command line
+    if (start == 0) {
+        matches = rl_completion_matches(text, builtin_generator);
+    }
+
+    // If matches is NULL, Readline automatically falls back to default filename completion
+    return matches;
+}
+
+void init_readline(void) {
+    using_history();
+    stifle_history(HISTORY_SIZE);
+    rl_attempted_completion_function = shell_completion;
 }
 
 char* get_history(int n) {
-    if (n < 1 || n > history_count) {
+    HIST_ENTRY **the_list = history_list();
+    if (the_list == NULL || n < 1) {
         return NULL;
     }
-    return history[n - 1];
+    int count = 0;
+    while (the_list[count] != NULL) {
+        count++;
+    }
+    if (n > count) {
+        return NULL;
+    }
+    return the_list[n - 1]->line;
 }
 
 int print_history(void) {
-    for (int i = 0; i < history_count; i++) {
-        printf("%d  %s\n", i + 1, history[i]);
-    }
-    return 1;
-}
-
-void clear_history(void) {
-    for (int i = 0; i < history_count; i++) {
-        if (history[i] != NULL) {
-            free(history[i]);
-            history[i] = NULL;
+    HIST_ENTRY **the_list = history_list();
+    if (the_list != NULL) {
+        for (int i = 0; the_list[i] != NULL; i++) {
+            printf("%d  %s\n", i + 1, the_list[i]->line);
         }
     }
-    history_count = 0;
+    return 1;
 }

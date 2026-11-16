@@ -4,7 +4,9 @@ int main() {
     char* cmdline;
     char** arglist;
 
-    while ((cmdline = read_cmd(PROMPT, stdin)) != NULL) {
+    init_readline();
+
+    while ((cmdline = readline(PROMPT)) != NULL) {
         // Skip leading whitespace to check if input is empty
         char* trimmed = cmdline;
         while (*trimmed == ' ' || *trimmed == '\t') {

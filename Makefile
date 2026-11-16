@@ -1,5 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -g -Iinclude
+LDFLAGS = -lreadline
 SRC = src/main.c src/shell.c src/execute.c
 OBJ = obj/main.o obj/shell.o obj/execute.o
 TARGET = bin/myshell
@@ -8,7 +9,7 @@ all: $(TARGET)
 
 $(TARGET): $(OBJ)
 	mkdir -p bin
-	$(CC) $(CFLAGS) $(OBJ) -o $(TARGET)
+	$(CC) $(CFLAGS) $(OBJ) -o $(TARGET) $(LDFLAGS)
 
 obj/%.o: src/%.c include/shell.h
 	mkdir -p obj
