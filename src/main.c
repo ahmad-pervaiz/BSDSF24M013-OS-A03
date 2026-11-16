@@ -5,7 +5,18 @@ int main() {
 
     init_readline();
 
-    while ((cmdline = readline(PROMPT)) != NULL) {
+    while (1) {
+        // Reap zombie background processes before showing prompt
+        check_jobs();
+
+        cmdline = readline(PROMPT);
+        if (cmdline == NULL) {
+            break;
+        }
+
+        // Also reap any background processes that completed while waiting
+        check_jobs();
+
         // Skip leading whitespace to check if input is empty
         char* trimmed = cmdline;
         while (*trimmed == ' ' || *trimmed == '\t') {
@@ -62,9 +73,28 @@ int main() {
 
         // Preprocess line to ensure proper spacing around special operators
         char* preprocessed = preprocess_operators(cmdline);
-        execute_pipeline(preprocessed);
-        free(preprocessed);
 
+        // Split by semicolon for command chaining (;)
+        char* chained_commands[MAXARGS];
+        int num_chained = split_by_semicolon(preprocessed, chained_commands, MAXARGS);
+
+        for (int i = 0; i < num_chained; i++) {
+            char* subcmd = chained_commands[i];
+            while (*subcmd == ' ' || *subcmd == '\t') {
+                subcmd++;
+            }
+            if (*subcmd == '\0') {
+                continue;
+            }
+
+            // Check if this command should run in background (&)
+            int is_bg = check_background(subcmd);
+
+            // Execute command / pipeline
+            execute_pipeline(subcmd, is_bg);
+        }
+
+        free(preprocessed);
         free(cmdline);
     }
 

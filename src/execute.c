@@ -85,7 +85,7 @@ static int split_pipeline(char* cmdline, char* commands[], int max_cmds) {
     return count;
 }
 
-int execute_pipeline(char* cmdline) {
+int execute_pipeline(char* cmdline, int is_background) {
     char* commands[MAXARGS];
     int num_cmds = split_pipeline(cmdline, commands, MAXARGS);
 
@@ -110,11 +110,33 @@ int execute_pipeline(char* cmdline) {
         }
 
         if (!has_redir) {
-            if (handle_builtin(arglist) == 0) {
-                execute(arglist);
+            if (!is_background && (strcmp(arglist[0], "cd") == 0 || strcmp(arglist[0], "exit") == 0)) {
+                handle_builtin(arglist);
+            } else if (!is_background && handle_builtin(arglist) == 1) {
+                // Built-in handled in parent
+            } else {
+                pid_t cpid = fork();
+                if (cpid < 0) {
+                    perror("fork failed");
+                } else if (cpid == 0) {
+                    if (handle_builtin(arglist) == 1) {
+                        exit(0);
+                    }
+                    execvp(arglist[0], arglist);
+                    perror("Command not found");
+                    exit(1);
+                } else {
+                    if (is_background) {
+                        add_job(cpid, cmdline);
+                        printf("[%d] %d\n", get_job_id(cpid), cpid);
+                    } else {
+                        int status;
+                        waitpid(cpid, &status, 0);
+                    }
+                }
             }
         } else {
-            if (strcmp(arglist[0], "cd") == 0 || strcmp(arglist[0], "exit") == 0) {
+            if (!is_background && (strcmp(arglist[0], "cd") == 0 || strcmp(arglist[0], "exit") == 0)) {
                 handle_builtin(arglist);
             } else {
                 pid_t pid = fork();
@@ -135,8 +157,13 @@ int execute_pipeline(char* cmdline) {
                     }
                     exit(0);
                 } else {
-                    int status;
-                    waitpid(pid, &status, 0);
+                    if (is_background) {
+                        add_job(pid, cmdline);
+                        printf("[%d] %d\n", get_job_id(pid), pid);
+                    } else {
+                        int status;
+                        waitpid(pid, &status, 0);
+                    }
                 }
             }
         }
@@ -208,9 +235,14 @@ int execute_pipeline(char* cmdline) {
         close(pipefds[k][1]);
     }
 
-    // Wait for all children in pipeline
-    for (int i = 0; i < num_cmds; i++) {
-        waitpid(pids[i], NULL, 0);
+    if (is_background) {
+        add_job(pids[num_cmds - 1], cmdline);
+        printf("[%d] %d\n", get_job_id(pids[num_cmds - 1]), pids[num_cmds - 1]);
+    } else {
+        // Wait for all children in pipeline
+        for (int i = 0; i < num_cmds; i++) {
+            waitpid(pids[i], NULL, 0);
+        }
     }
 
     return 0;

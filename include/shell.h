@@ -16,16 +16,26 @@
 #define MAXARGS 32
 #define ARGLEN 128
 #define HISTORY_SIZE 20
+#define MAX_JOBS 64
 #define PROMPT "FCIT> "
 
 // Function prototypes
 char** tokenize(char* cmdline);
 void free_arglist(char** arglist);
 char* preprocess_operators(const char* line);
+int split_by_semicolon(char* line, char* commands[], int max_cmds);
+int check_background(char* cmd);
 int execute(char** arglist);
-int execute_pipeline(char* cmdline);
+int execute_pipeline(char* cmdline, int is_background);
 int setup_redirection(char** arglist, char** exec_args);
 int handle_builtin(char** arglist);
+
+// Job control prototypes
+void add_job(pid_t pid, const char* cmd);
+void remove_job(pid_t pid);
+void check_jobs(void);
+int print_jobs(void);
+int get_job_id(pid_t pid);
 
 // Readline and history helper prototypes
 void init_readline(void);
