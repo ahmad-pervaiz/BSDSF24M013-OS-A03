@@ -390,14 +390,17 @@ int handle_builtin(char** arglist) {
     }
 
     // 3. help: Displays a brief help message listing built-in commands
+    // 3. help: Displays a brief help message listing built-in commands
     if (strcmp(arglist[0], "help") == 0) {
         printf("FCIT Custom Shell - Built-in Commands:\n");
         printf("  cd <directory>  : Change the current working directory\n");
         printf("  exit            : Terminate the shell\n");
         printf("  help            : Display this help message\n");
         printf("  history         : Display command history\n");
+        printf("  !n              : Re-execute the n-th command from history\n");
         printf("  jobs            : List active background jobs\n");
         printf("  set             : Display all shell variables\n");
+        printf("  VAR=value       : Assign a shell variable\n");
         return 1;
     }
 
