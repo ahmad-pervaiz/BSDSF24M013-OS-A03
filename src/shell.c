@@ -74,7 +74,7 @@ void free_arglist(char** arglist) {
 
 char** tokenize(char* cmdline) {
     // Edge case: empty command line
-    if (cmdline == NULL || cmdline[0] == '\0' || cmdline[0] == '\n') {
+    if (cmdline == NULL || cmdline[0] == '\0' || cmdline[0] == '\n' || cmdline[0] == '\r') {
         return NULL;
     }
 
@@ -90,30 +90,39 @@ char** tokenize(char* cmdline) {
     int argnum = 0;
 
     while (*cp != '\0' && argnum < MAXARGS) {
-        while (*cp == ' ' || *cp == '\t') cp++; // Skip leading whitespace
+        while (*cp == ' ' || *cp == '\t' || *cp == '\r' || *cp == '\n') cp++; // Skip leading whitespace
         
         if (*cp == '\0') break; // Line was only whitespace
 
-        if (*cp == '\"' || *cp == '\'') {
-            char quote = *cp++;
-            start = cp;
-            len = 0;
-            while (*cp != '\0' && *cp != quote) {
-                len++;
-                cp++;
+        start = cp;
+        len = 0;
+        int in_quote = 0;
+        char quote_char = 0;
+
+        while (*cp != '\0') {
+            if (!in_quote && (*cp == '\"' || *cp == '\'')) {
+                in_quote = 1;
+                quote_char = *cp;
+            } else if (in_quote && *cp == quote_char) {
+                in_quote = 0;
+            } else if (!in_quote && (*cp == ' ' || *cp == '\t' || *cp == '\r' || *cp == '\n')) {
+                break;
             }
-            if (*cp == quote) cp++;
-        } else {
-            start = cp;
-            len = 1;
-            while (*++cp != '\0' && !(*cp == ' ' || *cp == '\t')) {
-                len++;
-            }
+            len++;
+            cp++;
         }
 
         if (len >= ARGLEN) len = ARGLEN - 1;
         strncpy(arglist[argnum], start, len);
         arglist[argnum][len] = '\0';
+
+        // Strip matching outer quotes from token
+        if (len >= 2 && ((arglist[argnum][0] == '\"' && arglist[argnum][len - 1] == '\"') ||
+                         (arglist[argnum][0] == '\'' && arglist[argnum][len - 1] == '\''))) {
+            memmove(arglist[argnum], arglist[argnum] + 1, len - 2);
+            arglist[argnum][len - 2] = '\0';
+        }
+
         argnum++;
     }
 
@@ -321,8 +330,8 @@ int print_history(void) {
 
 int handle_if_statement(char* first_line) {
     char* p = first_line;
-    while (*p == ' ' || *p == '\t') p++;
-    if (strncmp(p, "if", 2) != 0 || (p[2] != ' ' && p[2] != '\t' && p[2] != '\0')) {
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+    if (strncmp(p, "if", 2) != 0 || (p[2] != ' ' && p[2] != '\t' && p[2] != '\r' && p[2] != '\n' && p[2] != '\0')) {
         return 0; // Not an if statement
     }
 
@@ -333,12 +342,14 @@ int handle_if_statement(char* first_line) {
     int num_else = 0;
 
     char* cond_start = p + 2;
-    while (*cond_start == ' ' || *cond_start == '\t') cond_start++;
+    while (*cond_start == ' ' || *cond_start == '\t' || *cond_start == '\r' || *cond_start == '\n') cond_start++;
 
     strncpy(condition, cond_start, MAX_LEN - 1);
     condition[MAX_LEN - 1] = '\0';
     int cl = strlen(condition);
-    while (cl > 0 && (condition[cl - 1] == ' ' || condition[cl - 1] == '\t' || condition[cl - 1] == ';')) {
+    while (cl > 0 && (condition[cl - 1] == ' ' || condition[cl - 1] == '\t' || 
+                      condition[cl - 1] == '\r' || condition[cl - 1] == '\n' || 
+                      condition[cl - 1] == ';')) {
         condition[--cl] = '\0';
     }
 
@@ -352,8 +363,15 @@ int handle_if_statement(char* first_line) {
             break;
         }
 
+        // Strip trailing \r, \n, spaces, and tabs
+        int llen = strlen(line);
+        while (llen > 0 && (line[llen - 1] == ' ' || line[llen - 1] == '\t' || 
+                            line[llen - 1] == '\r' || line[llen - 1] == '\n')) {
+            line[--llen] = '\0';
+        }
+
         char* trimmed = line;
-        while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+        while (*trimmed == ' ' || *trimmed == '\t' || *trimmed == '\r' || *trimmed == '\n') trimmed++;
 
         if (*trimmed == '\0') {
             free(line);
@@ -397,7 +415,12 @@ int handle_if_statement(char* first_line) {
             int n_ch = split_by_semicolon(prep, chained, MAXARGS);
             for (int c = 0; c < n_ch; c++) {
                 char* s = chained[c];
-                while (*s == ' ' || *s == '\t') s++;
+                while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+                int slen = strlen(s);
+                while (slen > 0 && (s[slen - 1] == ' ' || s[slen - 1] == '\t' || 
+                                    s[slen - 1] == '\r' || s[slen - 1] == '\n')) {
+                    s[--slen] = '\0';
+                }
                 if (*s != '\0') {
                     int bg = check_background(s);
                     execute_pipeline(s, bg);
@@ -412,7 +435,12 @@ int handle_if_statement(char* first_line) {
             int n_ch = split_by_semicolon(prep, chained, MAXARGS);
             for (int c = 0; c < n_ch; c++) {
                 char* s = chained[c];
-                while (*s == ' ' || *s == '\t') s++;
+                while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+                int slen = strlen(s);
+                while (slen > 0 && (s[slen - 1] == ' ' || s[slen - 1] == '\t' || 
+                                    s[slen - 1] == '\r' || s[slen - 1] == '\n')) {
+                    s[--slen] = '\0';
+                }
                 if (*s != '\0') {
                     int bg = check_background(s);
                     execute_pipeline(s, bg);
