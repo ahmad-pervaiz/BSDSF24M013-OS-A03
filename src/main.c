@@ -17,9 +17,15 @@ int main() {
         // Also reap any background processes that completed while waiting
         check_jobs();
 
+        // Strip trailing \r and \n if any
+        int clen = strlen(cmdline);
+        while (clen > 0 && (cmdline[clen - 1] == '\r' || cmdline[clen - 1] == '\n')) {
+            cmdline[--clen] = '\0';
+        }
+
         // Skip leading whitespace to check if input is empty
         char* trimmed = cmdline;
-        while (*trimmed == ' ' || *trimmed == '\t') {
+        while (*trimmed == ' ' || *trimmed == '\t' || *trimmed == '\r' || *trimmed == '\n') {
             trimmed++;
         }
 
